@@ -1,0 +1,3 @@
+npfl138
+pandoc
+pdf2image

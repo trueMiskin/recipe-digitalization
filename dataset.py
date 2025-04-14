@@ -39,6 +39,8 @@ def main():
     r = RecipeDataset()
     for data in r:
         img, title, ingredients, instructions = data
+        img *= 255
+        img = img.type(torch.uint8)
         convertor.show_image(img.permute(1, 2, 0).numpy())
 
 

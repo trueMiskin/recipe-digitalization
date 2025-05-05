@@ -100,6 +100,29 @@ def loss(y_pred, y_true):
     return title_loss + ingredients_loss + description_loss
 
 
+class EarlyStopper:
+    def __init__(self, patience=1, min_delta=0):
+        self.patience = patience
+        self.min_delta = min_delta
+        self.counter = 0
+        self.min_validation_loss = float('inf')
+
+    def __call__(self, module, epoch, logs):
+        if self.early_stop(logs['dev_loss']):
+            print(f"Early stopping at epoch {epoch + 1}")
+            return tm.TrainableModule.STOP_TRAINING
+
+    def early_stop(self, validation_loss):
+        if validation_loss < self.min_validation_loss:
+            self.min_validation_loss = validation_loss
+            self.counter = 0
+        elif validation_loss > (self.min_validation_loss + self.min_delta):
+            self.counter += 1
+            if self.counter >= self.patience:
+                return True
+        return False
+
+
 def main(args):
     if args.seed is not None:
         random.seed(args.seed)
@@ -148,8 +171,8 @@ def main(args):
     )
     
     transformed_train = npfl138.TransformedDataset(train_dataset)
-    transformed_test = npfl138.TransformedDataset(test_dataset)
-    transformed_train.transform = transformed_test.transform = transform
+    transformed_dev = npfl138.TransformedDataset(test_dataset)
+    transformed_train.transform = transformed_dev.transform = transform
 
     def collate_fn(batch):
         data, target = zip(*batch)
@@ -159,10 +182,10 @@ def main(args):
         ingredients = torch.nn.utils.rnn.pack_sequence(ingredients, enforce_sorted=False)
         instructions = torch.nn.utils.rnn.pack_sequence(instructions, enforce_sorted=False)
         return (title, ingredients, instructions), (torch.stack(title_gold), torch.stack(ingredients_gold), torch.stack(instructions_gold))
-    transformed_train.collate = transformed_test.collate = collate_fn
+    transformed_train.collate = transformed_dev.collate = collate_fn
 
     train = transformed_train.dataloader(batch_size=args.batch_size, shuffle=True, num_workers=args.num_workers)
-    test = transformed_test.dataloader(batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers)
+    dev = transformed_dev.dataloader(batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers)
     
     if args.show_prediction:
         assert(args.model != None)
@@ -190,7 +213,7 @@ def main(args):
             import convertor
             convertor.show_image(final_output)
     else:
-        model.fit(train, epochs=args.epochs)
+        model.fit(train, dev=dev, epochs=args.epochs, callbacks=[EarlyStopper(patience=3)])
 
         model.save_weights(os.path.join(args.logdir, "model_weights.pt"),
                         os.path.join(args.logdir, "optimizer"))

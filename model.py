@@ -34,7 +34,7 @@ class RandomizeContextCutoff(torch.nn.Module):
     def forward(self, x):
         if self.training:
             mask = torch.rand((x.shape[0]), device=x.device) < self.cutoff
-            cutted_x = torch.arange(x.shape[1], device=x.device) < 15 * x
+            cutted_x = torch.arange(x.shape[1], device=x.device) < 10 * x
             x = torch.where(mask.unsqueeze(-1),
                         cutted_x,
                         x

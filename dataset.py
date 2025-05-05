@@ -21,12 +21,14 @@ parser.add_argument('-p', '--use-paddle', default=True, action='store_true',
 
 
 class RecipeDataset(torch.utils.data.Dataset):
-    def __init__(self, csv_file="Food Ingredients and Recipe Dataset with Image Name Mapping.csv", transform=None):
+    def __init__(self, csv_file="Food Ingredients and Recipe Dataset with Image Name Mapping.csv", transform=None,
+                 generate_images=False):
         self.data = pd.read_csv(csv_file)
         
         self.data['Ingredients'] = self.data['Ingredients'].apply(literal_eval)
         self.data['Cleaned_Ingredients'] = self.data['Cleaned_Ingredients'].apply(literal_eval)
         self.data = self.data.to_numpy()
+        self.generate_images = generate_images
 
     def __len__(self):
         return len(self.data)
@@ -37,6 +39,10 @@ class RecipeDataset(torch.utils.data.Dataset):
         ingredients = self.data[idx][CLEANED_INGREDIENTS]
         instructions = self.data[idx][INSTRUCTIONS]
         text = template(title, ingredients, [instructions])
+
+        if not self.generate_images:
+            return title, ingredients, instructions
+
         images = convertor.convert_to_image(text, format='markdown')
         
         return torchvision.transforms.functional.to_tensor(np.hstack(images)),\
@@ -101,7 +107,7 @@ def ocr_with_paddle(img):
 
 
 def main(args):
-    r = RecipeDataset()
+    r = RecipeDataset(generate_images=True)
 
     only_images = True if not args.use_paddle else False
 

@@ -9,28 +9,36 @@ import random
 import torchvision
 import torchvision.transforms as transforms
 from dataset import RecipeDataset
-from transformers import AutoTokenizer
+from transformers import AutoTokenizer, ElectraForSequenceClassification, AutoModelForSequenceClassification
 
 parser = argparse.ArgumentParser(description='Recipe digitalization')
 parser.add_argument('--seed', type=int, default=1, help='Random seed')
 parser.add_argument('--threads', type=int, default=8, help='Number of threads')
 parser.add_argument('--batch_size', type=int, default=2, help='Batch size')
-parser.add_argument('--num_workers', type=int, default=8, help='Number of workers in dataloader')
+parser.add_argument('--num_workers', type=int, default=0, help='Number of workers in dataloader')
 
 
 class Model(tm.TrainableModule):
-    def __init__(self):
+    def __init__(self, backbone):
         super().__init__()
-        # Model definition
-        # self.conv1 = torch.nn.Conv2d(1, 16, 3, stride=2)
-        # self.conv2 = torch.nn.Conv2d(16, 32, 3, padding="same")
+        self.backbone = backbone
 
-    def forward(self, x):
-        # Model calling
-        # x = F.relu(self.conv1(x))
-        # x = F.relu(self.conv2(x))
-        # return x
-        pass
+    def forward(self, title, ingredients, description):
+        title, _ = torch.nn.utils.rnn.pad_packed_sequence(title, batch_first=True)
+        title_output = self.backbone(title, attention_mask=title != 0)
+        ingredients, _ = torch.nn.utils.rnn.pad_packed_sequence(ingredients, batch_first=True)
+        ingredients_output = self.backbone(ingredients, attention_mask=ingredients != 0)
+        description, _ = torch.nn.utils.rnn.pad_packed_sequence(description, batch_first=True)
+        description_output = self.backbone(description, attention_mask=description != 0)
+        return title_output, ingredients_output, description_output
+
+def loss(y_pred, y_true):
+    title_pred, ingredients_pred, description_pred = y_pred
+    title_true, ingredients_true, description_true = y_true
+    title_loss = F.cross_entropy(title_pred.logits, title_true)
+    ingredients_loss = F.cross_entropy(ingredients_pred.logits, ingredients_true)
+    description_loss = F.cross_entropy(description_pred.logits, description_true)
+    return title_loss + ingredients_loss + description_loss
 
 def main(args):
     if args.seed is not None:
@@ -45,20 +53,24 @@ def main(args):
 
     global_keras_initializers()
 
-    model = Model()
+    # tokenizer = AutoTokenizer.from_pretrained("bert-base-uncased")
+    backbone_model = ElectraForSequenceClassification.from_pretrained("google/electra-small-discriminator", num_labels=3)
+    tokenizer = AutoTokenizer.from_pretrained("google/electra-small-discriminator")
+
+    model = Model(backbone_model)
     model.configure(
         optimizer=torch.optim.AdamW(model.parameters(), lr=0.002),
-        loss=torch.nn.MSELoss()
+        loss=loss,
     )
 
-    tokenizer = AutoTokenizer.from_pretrained("bert-base-uncased")
-    def transform(images, title, ingredients, instructions):
+    def transform(title, ingredients, instructions):
         nonlocal tokenizer
-        # TODO: img augmentation
         title = tokenizer(title, return_tensors='pt')['input_ids'].squeeze()
-        ingredients = tokenizer("[SEP]".join(ingredients), return_tensors='pt')['input_ids'].squeeze()
-        instructions = tokenizer("[SEP]".join(instructions), return_tensors='pt')['input_ids'].squeeze()
-        return images, (title, ingredients, instructions)
+        ingredients = tokenizer(" ".join(ingredients), return_tensors='pt')['input_ids'].squeeze()
+        ingredients = ingredients[:512]
+        instructions = tokenizer(" ".join(instructions), return_tensors='pt')['input_ids'].squeeze()
+        instructions = instructions[:512]
+        return (title, ingredients, instructions), (torch.tensor(0), torch.tensor(1), torch.tensor(2))
 
     train_dataset, test_dataset = \
         torch.utils.data.random_split(
@@ -72,18 +84,19 @@ def main(args):
     transformed_train.transform = transformed_test.transform = transform
 
     def collate_fn(batch):
-        images, targets = zip(*batch)
-        title, ingredients, instructions = zip(*targets)
-        images = torch.stack(images)
+        data, target = zip(*batch)
+        title, ingredients, instructions = zip(*data)
+        title_gold, ingredients_gold, instructions_gold = zip(*target)
         title = torch.nn.utils.rnn.pack_sequence(title, enforce_sorted=False)
         ingredients = torch.nn.utils.rnn.pack_sequence(ingredients, enforce_sorted=False)
         instructions = torch.nn.utils.rnn.pack_sequence(instructions, enforce_sorted=False)
-        return images, (title, ingredients, instructions)
+        return (title, ingredients, instructions), (torch.stack(title_gold), torch.stack(ingredients_gold), torch.stack(instructions_gold))
     transformed_train.collate = transformed_test.collate = collate_fn
 
     train = transformed_train.dataloader(batch_size=args.batch_size, shuffle=True, num_workers=args.num_workers)
     test = transformed_test.dataloader(batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers)
     
+    # print(model.forward(next(iter(train))))
     model.fit(train, epochs=5)
 
 if __name__ == '__main__':

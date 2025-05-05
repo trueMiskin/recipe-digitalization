@@ -16,6 +16,7 @@ parser.add_argument('--seed', type=int, default=1, help='Random seed')
 parser.add_argument('--threads', type=int, default=8, help='Number of threads')
 parser.add_argument('--batch_size', type=int, default=2, help='Batch size')
 parser.add_argument('--num_workers', type=int, default=0, help='Number of workers in dataloader')
+parser.add_argument('--epochs', type=int, default=20, help='Number of epochs')
 
 
 class Model(tm.TrainableModule):
@@ -97,7 +98,7 @@ def main(args):
     test = transformed_test.dataloader(batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers)
     
     # print(model.forward(next(iter(train))))
-    model.fit(train, epochs=5)
+    model.fit(train, epochs=args.epochs)
 
 if __name__ == '__main__':
     main(parser.parse_args())

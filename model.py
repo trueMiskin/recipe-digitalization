@@ -1,3 +1,6 @@
+import os
+import datetime
+import re
 import argparse
 import npfl138
 from npfl138 import trainable_module as tm
@@ -58,10 +61,17 @@ def main(args):
     backbone_model = ElectraForSequenceClassification.from_pretrained("google/electra-small-discriminator", num_labels=3)
     tokenizer = AutoTokenizer.from_pretrained("google/electra-small-discriminator")
 
+    args.logdir = os.path.join("logs", "{}-{}-{}".format(
+        os.path.basename(globals().get("__file__", "notebook")),
+        datetime.datetime.now().strftime("%Y-%m-%d_%H%M%S"),
+        ",".join(("{}={}".format(re.sub("(.)[^_]*_?", r"\1", k), v) for k, v in sorted(vars(args).items())))
+    ))
+
     model = Model(backbone_model)
     model.configure(
         optimizer=torch.optim.AdamW(model.parameters(), lr=0.002),
         loss=loss,
+        logdir=args.logdir,
     )
 
     def transform(title, ingredients, instructions):
@@ -97,8 +107,10 @@ def main(args):
     train = transformed_train.dataloader(batch_size=args.batch_size, shuffle=True, num_workers=args.num_workers)
     test = transformed_test.dataloader(batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers)
     
-    # print(model.forward(next(iter(train))))
     model.fit(train, epochs=args.epochs)
+
+    model.save_weights(os.path.join(args.logdir, "model_weights.pt"),
+                       os.path.join(args.logdir, "optimizer"))
 
 if __name__ == '__main__':
     main(parser.parse_args())

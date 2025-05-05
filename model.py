@@ -36,6 +36,17 @@ class Model(tm.TrainableModule):
         description_output = self.backbone(description, attention_mask=description != 0)
         return title_output, ingredients_output, description_output
 
+    def predict(self, inputs: list[str]):
+        tokenizer = AutoTokenizer.from_pretrained("google/electra-small-discriminator")
+        tokenized_input = tokenizer(inputs, return_tensors='pt', padding=True, truncation=True)
+        inputs = tokenized_input['input_ids'].to(self.device)
+        attention_mask = tokenized_input['attention_mask'].to(self.device)
+        self.backbone.eval()
+        with torch.no_grad():
+            logits = self.backbone(inputs, attention_mask=attention_mask).logits
+            return torch.argmax(torch.softmax(logits, dim=-1), dim=-1).cpu().numpy()
+
+
 def loss(y_pred, y_true):
     title_pred, ingredients_pred, description_pred = y_pred
     title_true, ingredients_true, description_true = y_true

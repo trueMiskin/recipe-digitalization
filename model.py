@@ -20,23 +20,40 @@ parser.add_argument('--batch_size', type=int, default=2, help='Batch size')
 parser.add_argument('--num_workers', type=int, default=0, help='Number of workers in dataloader')
 parser.add_argument('--epochs', type=int, default=20, help='Number of epochs')
 parser.add_argument('--lr', type=float, default=0.0001, help='Learning rate')
+parser.add_argument('--random_contex_cutoff', type=float, default=0.5, help='Random context cutoff')
 parser.add_argument('--show_prediction', default=False, action='store_true', help='Show predicted function')
 parser.add_argument('--model', default=None, help="Load model")
 parser.add_argument('--img_dir', default=None, help="Image directory")
 
+class RandomizeContextCutoff(torch.nn.Module):
+    def __init__(self, cutoff=0.5):
+        super().__init__()
+        self.cutoff = cutoff
+
+    def forward(self, x):
+        if self.training:
+            mask = torch.rand((x.shape[0])) < self.cutoff
+            cutted_x = torch.arange(x.shape[1]) < 15 * x
+            x = torch.where(mask.unsqueeze(-1),
+                        cutted_x,
+                        x
+            )
+        return x
+
 class Model(tm.TrainableModule):
-    def __init__(self, backbone):
+    def __init__(self, backbone, random_contex_cutoff):
         super().__init__()
         self.backbone = backbone
+        self.randomized_cutoff = RandomizeContextCutoff(random_contex_cutoff)
         self.ocr = None
 
     def forward(self, title, ingredients, description):
         title, _ = torch.nn.utils.rnn.pad_packed_sequence(title, batch_first=True)
-        title_output = self.backbone(title, attention_mask=title != 0)
+        title_output = self.backbone(title, attention_mask=self.randomized_cutoff(title != 0))
         ingredients, _ = torch.nn.utils.rnn.pad_packed_sequence(ingredients, batch_first=True)
-        ingredients_output = self.backbone(ingredients, attention_mask=ingredients != 0)
+        ingredients_output = self.backbone(ingredients, attention_mask=self.randomized_cutoff(ingredients != 0))
         description, _ = torch.nn.utils.rnn.pad_packed_sequence(description, batch_first=True)
-        description_output = self.backbone(description, attention_mask=description != 0)
+        description_output = self.backbone(description, attention_mask=self.randomized_cutoff(description != 0))
         return title_output, ingredients_output, description_output
 
     def predict(self, image):
@@ -147,7 +164,7 @@ def main(args):
         ",".join(("{}={}".format(re.sub("(.)[^_]*_?", r"\1", k), v) for k, v in sorted(vars(args).items())))
     ))
 
-    model = Model(backbone_model)
+    model = Model(backbone_model, args.random_contex_cutoff)
     model.configure(
         optimizer=torch.optim.AdamW(model.parameters(), lr=args.lr),
         loss=loss,

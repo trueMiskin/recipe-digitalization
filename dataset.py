@@ -38,7 +38,11 @@ class RecipeDataset(torch.utils.data.Dataset):
         title = self.data[idx][TITLE]
         ingredients = self.data[idx][CLEANED_INGREDIENTS]
         instructions = self.data[idx][INSTRUCTIONS]
-        text = template(title, ingredients, [instructions])
+
+        if type(instructions) is str:
+            instructions = [instructions]
+
+        text = template(title, ingredients, instructions)
 
         if not self.generate_images:
             return title, ingredients, instructions

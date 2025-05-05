@@ -9,23 +9,25 @@ import torch
 import torch.nn.functional as F
 import numpy as np
 import random
-import torchvision
-import torchvision.transforms as transforms
 from dataset import RecipeDataset
-from transformers import AutoTokenizer, ElectraForSequenceClassification, AutoModelForSequenceClassification
+import torchmetrics
+from transformers import AutoTokenizer, ElectraForSequenceClassification
 
 parser = argparse.ArgumentParser(description='Recipe digitalization')
 parser.add_argument('--seed', type=int, default=1, help='Random seed')
-parser.add_argument('--threads', type=int, default=8, help='Number of threads')
+parser.add_argument('--threads', type=int, default=1, help='Number of threads')
 parser.add_argument('--batch_size', type=int, default=2, help='Batch size')
 parser.add_argument('--num_workers', type=int, default=0, help='Number of workers in dataloader')
 parser.add_argument('--epochs', type=int, default=20, help='Number of epochs')
-
+parser.add_argument('--lr', type=float, default=0.0001, help='Learning rate')
+parser.add_argument('--show_prediction', default=False, action='store_true', help='Show predicted function')
+parser.add_argument('--model', default=None, help="Load model")
 
 class Model(tm.TrainableModule):
     def __init__(self, backbone):
         super().__init__()
         self.backbone = backbone
+        self.ocr = None
 
     def forward(self, title, ingredients, description):
         title, _ = torch.nn.utils.rnn.pad_packed_sequence(title, batch_first=True)
@@ -36,15 +38,57 @@ class Model(tm.TrainableModule):
         description_output = self.backbone(description, attention_mask=description != 0)
         return title_output, ingredients_output, description_output
 
-    def predict(self, inputs: list[str]):
+    def predict(self, image):
+        if self.ocr is None:
+            from paddleocr import PPStructure
+            self.ocr = PPStructure(show_log=False,
+                layout_score_threshold=0.3,
+                layout_nms_threshold=0.5,
+                table=False,
+                image_orientation=False,
+                ocr=True,
+                lang='en',
+                merge_no_span_structure=False,
+            )
+        ocr_result = self.ocr(image)
+        model_input = []
+        bboxes = []
+        for layout in ocr_result:
+            previous_lines = ""
+            for res in layout['res']:
+                text = res['text']
+                previous_lines += text
+                if text.endswith('-'):
+                    # connect split word
+                    previous_lines = previous_lines[:-1]
+            model_input.append(previous_lines)
+            bboxes.append(layout['bbox'])
+
         tokenizer = AutoTokenizer.from_pretrained("google/electra-small-discriminator")
-        tokenized_input = tokenizer(inputs, return_tensors='pt', padding=True, truncation=True)
-        inputs = tokenized_input['input_ids'].to(self.device)
+        tokenized_input = tokenizer(model_input, return_tensors='pt', padding=True, truncation=True)
+        input_ids = tokenized_input['input_ids'].to(self.device)
         attention_mask = tokenized_input['attention_mask'].to(self.device)
         self.backbone.eval()
         with torch.no_grad():
-            logits = self.backbone(inputs, attention_mask=attention_mask).logits
-            return torch.argmax(torch.softmax(logits, dim=-1), dim=-1).cpu().numpy()
+            logits = self.backbone(input_ids, attention_mask=attention_mask).logits
+            return model_input, bboxes, torch.argmax(torch.softmax(logits, dim=-1), dim=-1).cpu().numpy()
+
+    def compute_metrics(self, y_pred, y, *xs):
+        """Compute and return metrics given the inputs, predictions, and target outputs.
+
+        Parameters:
+          y_pred: The model predictions, either a single tensor or a sequence of tensors.
+          y: The target output of the model, either a single tensor or a sequence of tensors.
+          *xs: The inputs to the model, unpacked, if the input was a sequence of tensors.
+
+        Returns:
+          logs: A dictionary of computed metrics.
+        """
+        y_pred = torch.cat([y_pred[0].logits, y_pred[1].logits, y_pred[2].logits], dim=0)
+        y = torch.cat([y[0], y[1], y[2]], dim=0)
+        for metric in self.metrics.values():
+            metric.update(y_pred, y)
+        return {name: metric.compute() for name, metric in self.metrics.items()}
 
 
 def loss(y_pred, y_true):
@@ -54,6 +98,7 @@ def loss(y_pred, y_true):
     ingredients_loss = F.cross_entropy(ingredients_pred.logits, ingredients_true)
     description_loss = F.cross_entropy(description_pred.logits, description_true)
     return title_loss + ingredients_loss + description_loss
+
 
 def main(args):
     if args.seed is not None:
@@ -80,9 +125,10 @@ def main(args):
 
     model = Model(backbone_model)
     model.configure(
-        optimizer=torch.optim.AdamW(model.parameters(), lr=0.002),
+        optimizer=torch.optim.AdamW(model.parameters(), lr=args.lr),
         loss=loss,
         logdir=args.logdir,
+        metrics={'acc': torchmetrics.Accuracy('multiclass', num_classes=3)},
     )
 
     def transform(title, ingredients, instructions):
@@ -118,10 +164,36 @@ def main(args):
     train = transformed_train.dataloader(batch_size=args.batch_size, shuffle=True, num_workers=args.num_workers)
     test = transformed_test.dataloader(batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers)
     
-    model.fit(train, epochs=args.epochs)
+    if args.show_prediction:
+        assert(args.model != None)
+        model.load_weights(args.model)
+        
+        for data in RecipeDataset(generate_images=True):
+            img, *_ = data
+            img *= 255
+            img = img.type(torch.uint8)
+            img = img.permute(1, 2, 0).numpy()
+            model_input, bboxes, classes = model.predict(img)
 
-    model.save_weights(os.path.join(args.logdir, "model_weights.pt"),
-                       os.path.join(args.logdir, "optimizer"))
+            from paddleocr import draw_ocr, draw_structure_result
+            result_dict = []
+            for input, bbox, class_ in zip(model_input, bboxes, classes):
+                result_dict.append({
+                    'type': ['title', 'ingredients', 'description'][class_],
+                    'bbox': bbox,
+                    'res': '',
+                    'img_idx': 0,
+                    'score': 0.99,
+                })
+
+            final_output = draw_structure_result(img, result_dict, font_path='simfang.ttf')
+            import convertor
+            convertor.show_image(final_output)
+    else:
+        model.fit(train, epochs=args.epochs)
+
+        model.save_weights(os.path.join(args.logdir, "model_weights.pt"),
+                        os.path.join(args.logdir, "optimizer"))
 
 if __name__ == '__main__':
     main(parser.parse_args())

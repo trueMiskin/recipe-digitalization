@@ -9,7 +9,7 @@ import torch
 import torch.nn.functional as F
 import numpy as np
 import random
-from dataset import RecipeDataset
+from dataset import RecipeDataset, OnlyImageRecipeDataset
 import torchmetrics
 from transformers import AutoTokenizer, ElectraForSequenceClassification
 
@@ -22,6 +22,7 @@ parser.add_argument('--epochs', type=int, default=20, help='Number of epochs')
 parser.add_argument('--lr', type=float, default=0.0001, help='Learning rate')
 parser.add_argument('--show_prediction', default=False, action='store_true', help='Show predicted function')
 parser.add_argument('--model', default=None, help="Load model")
+parser.add_argument('--img_dir', default=None, help="Image directory")
 
 class Model(tm.TrainableModule):
     def __init__(self, backbone):
@@ -191,14 +192,18 @@ def main(args):
         assert(args.model != None)
         model.load_weights(args.model)
         
-        for data in RecipeDataset(generate_images=True):
+        dataset = RecipeDataset(generate_images=True)
+        if args.img_dir is not None:
+            dataset = OnlyImageRecipeDataset(args.img_dir)
+
+        for data in dataset:
             img, *_ = data
             img *= 255
             img = img.type(torch.uint8)
             img = img.permute(1, 2, 0).numpy()
             model_input, bboxes, classes = model.predict(img)
 
-            from paddleocr import draw_ocr, draw_structure_result
+            from paddleocr import draw_structure_result
             result_dict = []
             for input, bbox, class_ in zip(model_input, bboxes, classes):
                 result_dict.append({

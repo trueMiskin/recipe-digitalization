@@ -1,4 +1,5 @@
 from ast import literal_eval
+import os
 import pandas as pd
 import numpy as np
 import torch
@@ -7,6 +8,7 @@ import torchvision
 import argparse
 from paddleocr import PPStructure,draw_structure_result,save_structure_res
 from paddleocr import PaddleOCR, draw_ocr, PPStructure
+from PIL import Image
 
 TITLE = 1
 INGREDIENTS = 2
@@ -51,6 +53,21 @@ class RecipeDataset(torch.utils.data.Dataset):
         
         return torchvision.transforms.functional.to_tensor(np.hstack(images)),\
             title, ingredients, instructions
+
+
+class OnlyImageRecipeDataset(torch.utils.data.Dataset):
+    def __init__(self, image_folder):
+        self.image_folder = image_folder
+        self.image_names = []
+        for file in os.listdir(image_folder):
+            self.image_names.append(file)
+
+    def __len__(self):
+        return len(self.data)
+    
+    def __getitem__(self, idx):
+        image = Image.open(self.image_folder + "/" + self.image_names[idx])
+        return torchvision.transforms.functional.to_tensor(image), "", [], []
 
 
 def ocr_with_paddle(img):

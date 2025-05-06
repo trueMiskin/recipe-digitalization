@@ -12,6 +12,7 @@ import random
 from dataset import RecipeDataset, OnlyImageRecipeDataset
 import torchmetrics
 from transformers import AutoTokenizer, ElectraForSequenceClassification
+from PIL import Image
 
 parser = argparse.ArgumentParser(description='Recipe digitalization')
 parser.add_argument('--seed', type=int, default=1, help='Random seed')
@@ -45,6 +46,7 @@ class Model(tm.TrainableModule):
         super().__init__()
         self.backbone = backbone
         self.randomized_cutoff = RandomizeContextCutoff(random_contex_cutoff)
+        self.layout_ocr = None
         self.ocr = None
 
     def forward(self, title, ingredients, description):
@@ -57,9 +59,9 @@ class Model(tm.TrainableModule):
         return title_output, ingredients_output, description_output
 
     def predict(self, image):
-        if self.ocr is None:
+        if self.layout_ocr is None:
             from paddleocr import PPStructure
-            self.ocr = PPStructure(show_log=False,
+            self.layout_ocr = PPStructure(show_log=False,
                 layout_score_threshold=0.3,
                 layout_nms_threshold=0.5,
                 table=False,
@@ -68,19 +70,42 @@ class Model(tm.TrainableModule):
                 lang='en',
                 merge_no_span_structure=False,
             )
-        ocr_result = self.ocr(image)
+        if self.ocr is None:
+            from paddleocr import PaddleOCR
+            self.ocr = PaddleOCR(lang='en',
+                                use_angle_cls=True
+            )
+        ocr_result = self.layout_ocr(image)
         model_input = []
         bboxes = []
-        for layout in ocr_result:
-            previous_lines = ""
-            for res in layout['res']:
-                text = res['text']
-                previous_lines += text
-                if text.endswith('-'):
-                    # connect split word
-                    previous_lines = previous_lines[:-1]
-            model_input.append(previous_lines)
-            bboxes.append(layout['bbox'])
+        res_part = []
+        if len(ocr_result) <= 1:
+            result = self.ocr.ocr(image, det=True, rec=True)[0]
+            boxes = [line[0] for line in result]
+            txts = [line[1][0] for line in result]
+            if ocr_result[0]['res'] == '':
+                return [], [], [], []
+            # use OCR regions
+            model_input = txts
+            bboxes = []
+            res_part = []
+            for box, txt in zip(boxes, txts):
+                left, upper = box[0][0], box[0][1]
+                right, lower = box[2][0], box[2][1]
+                bboxes.append([left, upper, right, lower])
+                res_part.append([{'text': txt, 'text_region': box, 'confidence': 0.99}])
+        else:
+            for layout in ocr_result:
+                previous_lines = ""
+                for res in layout['res']:
+                    text = res['text']
+                    previous_lines += text
+                    if text.endswith('-'):
+                        # connect split word
+                        previous_lines = previous_lines[:-1]
+                model_input.append(previous_lines)
+                bboxes.append(layout['bbox'])
+                res_part.append(layout['res'])
 
         tokenizer = AutoTokenizer.from_pretrained("google/electra-small-discriminator")
         tokenized_input = tokenizer(model_input, return_tensors='pt', padding=True, truncation=True)
@@ -89,7 +114,7 @@ class Model(tm.TrainableModule):
         self.backbone.eval()
         with torch.no_grad():
             logits = self.backbone(input_ids, attention_mask=attention_mask).logits
-            return model_input, bboxes, torch.argmax(torch.softmax(logits, dim=-1), dim=-1).cpu().numpy()
+            return model_input, bboxes, res_part, torch.argmax(torch.softmax(logits, dim=-1), dim=-1).cpu().numpy()
 
     def compute_metrics(self, y_pred, y, *xs):
         """Compute and return metrics given the inputs, predictions, and target outputs.
@@ -213,20 +238,27 @@ def main(args):
         if args.img_dir is not None:
             dataset = OnlyImageRecipeDataset(args.img_dir)
 
-        for data in dataset:
+        # create logdir if it doesn't exist
+        if not os.path.exists(args.logdir):
+            os.makedirs(args.logdir)
+
+        for idx, data in enumerate(dataset):
+            if idx < 4:
+                continue
             img, *_ = data
             img *= 255
             img = img.type(torch.uint8)
             img = img.permute(1, 2, 0).numpy()
-            model_input, bboxes, classes = model.predict(img)
+            model_input, bboxes, res_part, classes = model.predict(img)
 
             from paddleocr import draw_structure_result
             result_dict = []
-            for input, bbox, class_ in zip(model_input, bboxes, classes):
+            for input, bbox, rest_p, class_ in zip(model_input, bboxes, res_part, classes):
+                print(input)
                 result_dict.append({
                     'type': ['title', 'ingredients', 'description'][class_],
                     'bbox': bbox,
-                    'res': '',
+                    'res': rest_p,
                     'img_idx': 0,
                     'score': 0.99,
                 })
@@ -234,6 +266,7 @@ def main(args):
             final_output = draw_structure_result(img, result_dict, font_path='simfang.ttf')
             import convertor
             convertor.show_image(final_output)
+            Image.fromarray(final_output).save(os.path.join(args.logdir, f"{idx:02d}.png"))
     else:
         model.fit(train, dev=dev, epochs=args.epochs, callbacks=[EarlyStopper(patience=3)])
 

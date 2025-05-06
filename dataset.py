@@ -59,13 +59,14 @@ class OnlyImageRecipeDataset(torch.utils.data.Dataset):
     def __init__(self, image_folder):
         self.image_folder = image_folder
         self.image_names = []
-        for file in os.listdir(image_folder):
+        for file in sorted(os.listdir(image_folder)):
             self.image_names.append(file)
 
     def __len__(self):
         return len(self.data)
     
     def __getitem__(self, idx):
+        print(self.image_folder + "/" + self.image_names[idx])
         image = Image.open(self.image_folder + "/" + self.image_names[idx])
         return torchvision.transforms.functional.to_tensor(image), "", [], []
 

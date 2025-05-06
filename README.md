@@ -78,10 +78,10 @@ With proper hyperparameters:
 …the model quickly reached over **99% validation accuracy in 6 epochs**.
 
 ![Training and Validation Accuracy](acc.svg)  
-*Figure 1 – Accuracy curve over training epochs*
+*Figure 1 – Accuracy curve over training epochs for two models. The first model is trained for 10 epochs, while the second model stops at epoch 7 due to early stopping. The blue line represents the training set, and the red line represents the validation set. The curves have been smoothed, the low opacity lines represent the true values.*
 
 ![Training and Validation Loss](loss.svg)  
-*Figure 2 – Loss curve over training epochs*
+*Figure 2 – Loss curve over training epochs. The y-axis uses a logarithmic scale.*
 
 
 

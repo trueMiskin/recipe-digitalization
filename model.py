@@ -243,8 +243,6 @@ def main(args):
             os.makedirs(args.logdir)
 
         for idx, data in enumerate(dataset):
-            if idx < 4:
-                continue
             img, *_ = data
             img *= 255
             img = img.type(torch.uint8)

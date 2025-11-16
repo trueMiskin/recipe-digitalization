@@ -4,7 +4,6 @@ import pandas as pd
 import numpy as np
 import torch
 import convertor
-import torchvision
 import argparse
 from paddleocr import PPStructure,draw_structure_result,save_structure_res
 from paddleocr import PaddleOCR, draw_ocr, PPStructure
@@ -50,9 +49,10 @@ class RecipeDataset(torch.utils.data.Dataset):
             return title, ingredients, instructions
 
         images = convertor.convert_to_image(text, format='markdown')
+        img = np.hstack(images)
         
-        return torchvision.transforms.functional.to_tensor(np.hstack(images)),\
-            title, ingredients, instructions
+        # Output numpy array of a image: 0-255, HxWxC
+        return img, title, ingredients, instructions
 
 
 class OnlyImageRecipeDataset(torch.utils.data.Dataset):
@@ -68,7 +68,8 @@ class OnlyImageRecipeDataset(torch.utils.data.Dataset):
     def __getitem__(self, idx):
         print(self.image_folder + "/" + self.image_names[idx])
         image = Image.open(self.image_folder + "/" + self.image_names[idx])
-        return torchvision.transforms.functional.to_tensor(image), "", [], []
+        # Output numpy array of a image: 0-255, HxWxC
+        return np.asarray(image), "", [], []
 
 
 def ocr_with_paddle(img):
@@ -132,22 +133,18 @@ def ocr_with_paddle(img):
 
 def main(args):
     r = RecipeDataset(generate_images=True)
+    # r = OnlyImageRecipeDataset("recipe_edited")
 
-    # Run for concrete img
     only_images = True if not args.use_paddle else False
+    
+    # Run for concrete img
     # from PIL import Image
-    # img = torchvision.transforms.functional.to_tensor(Image.open("recipe_edited/griddle-recipe-book-2_edited.jpg"))
-    # img *= 255
-    # img = img.type(torch.uint8)
-    # img = img.permute(1, 2, 0).numpy()
+    # img = np.asarray(Image.open("recipe_edited/griddle-recipe-book-2_edited.jpg"))
     # ocr_with_paddle(img)
     # return
 
     for data in r:
         img, title, ingredients, instructions = data
-        img *= 255
-        img = img.type(torch.uint8)
-        img = img.permute(1, 2, 0).numpy()
 
         lu, ru, rd, ld = [233.0, 160.0], [1397.0, 165.0], [1397.0, 197.0], [233.0, 192.0]
         from PIL import Image

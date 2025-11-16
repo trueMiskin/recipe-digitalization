@@ -244,9 +244,6 @@ def main(args):
 
         for idx, data in enumerate(dataset):
             img, *_ = data
-            img *= 255
-            img = img.type(torch.uint8)
-            img = img.permute(1, 2, 0).numpy()
             model_input, bboxes, res_part, classes = model.predict(img)
 
             from paddleocr import draw_structure_result

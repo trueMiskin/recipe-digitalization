@@ -134,7 +134,7 @@ def main(args):
     r = RecipeDataset(generate_images=True)
 
     # Run for concrete img
-    # only_images = True if not args.use_paddle else False
+    only_images = True if not args.use_paddle else False
     # from PIL import Image
     # img = torchvision.transforms.functional.to_tensor(Image.open("recipe_edited/griddle-recipe-book-2_edited.jpg"))
     # img *= 255

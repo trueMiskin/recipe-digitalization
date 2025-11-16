@@ -8,12 +8,13 @@ import argparse
 from paddleocr import PPStructure,draw_structure_result,save_structure_res
 from paddleocr import PaddleOCR, draw_ocr, PPStructure
 from PIL import Image
+import json
 
-TITLE = 1
-INGREDIENTS = 2
-INSTRUCTIONS = 3
-IMAGE_NAME = 4
-CLEANED_INGREDIENTS = 5
+R_TITLE = 1
+R_INGREDIENTS = 2
+R_INSTRUCTIONS = 3
+R_IMAGE_NAME = 4
+R_CLEANED_INGREDIENTS = 5
 
 parser = argparse.ArgumentParser(prog='Recipe dataset',
                                  description='Without parameters program show images of recipes.')
@@ -36,9 +37,9 @@ class RecipeDataset(torch.utils.data.Dataset):
     
     def __getitem__(self, idx):
         template = np.random.choice(convertor.TEMPLATES)
-        title = self.data[idx][TITLE]
-        ingredients = self.data[idx][CLEANED_INGREDIENTS]
-        instructions = self.data[idx][INSTRUCTIONS]
+        title = self.data[idx][R_TITLE]
+        ingredients = self.data[idx][R_CLEANED_INGREDIENTS]
+        instructions = self.data[idx][R_INSTRUCTIONS]
 
         if type(instructions) is str:
             instructions = [instructions]
@@ -54,6 +55,27 @@ class RecipeDataset(torch.utils.data.Dataset):
         # Output numpy array of a image: 0-255, HxWxC
         return img, title, ingredients, instructions
 
+P_OCR_TEXT = "texts"
+P_OCR_BOXES = "boxes"
+P_TITLE = "title"
+P_INGREDIENTS = "ingredients"
+P_INSTRUCTIONS = "instructions"
+
+class PreprocessedRecipeDataset(torch.utils.data.Dataset):
+    def __init__(self, csv_file="PreprocessedDataset.json", transform=None):
+        self.data = json.load(open(csv_file, 'r'))
+    
+    def __len__(self):
+        return len(self.data)
+    
+    def __getitem__(self, idx):
+        ocr_text = self.data[idx][P_OCR_TEXT]
+        ocr_boxes = self.data[idx][P_OCR_BOXES]
+        title = self.data[idx][R_TITLE]
+        ingredients = self.data[idx][R_CLEANED_INGREDIENTS]
+        instructions = self.data[idx][R_INSTRUCTIONS]
+        
+        return ocr_text, ocr_boxes, title, ingredients, instructions
 
 class OnlyImageRecipeDataset(torch.utils.data.Dataset):
     def __init__(self, image_folder):

@@ -89,7 +89,8 @@ class PreprocessedRecipeDataset(torch.utils.data.Dataset):
         ans = self.data[idx][ [P_TITLE, P_INGREDIENTS, P_INSTRUCTIONS][question_type] ]
         
         if question_type != P_TITLE:
-            ans = '\n'.join(ans)
+            # separator multiple answers
+            ans = '|'.join(ans)
 
         output_text = prepare_question(question_type, ocr_text, ocr_boxes, self.include_box_data)
 

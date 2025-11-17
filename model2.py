@@ -10,7 +10,7 @@ from dataset import PreprocessedRecipeDataset, OnlyImageRecipeDataset
 from PIL import Image
 from transformers import T5Tokenizer, DataCollatorForSeq2Seq
 from transformers import T5ForConditionalGeneration, Seq2SeqTrainingArguments, Seq2SeqTrainer
-from torchmetrics.text import BLEUScore
+from torchmetrics.functional.text import bleu_score
 import Levenshtein
 
 parser = argparse.ArgumentParser(description='Recipe digitalization')
@@ -112,9 +112,8 @@ def main(args):
         decoded_preds = tokenizer.batch_decode(predictions, skip_special_tokens=True)
         decoded_labels = tokenizer.batch_decode(target_ans, skip_special_tokens=True)
 
-        bleu_metric = BLEUScore()
         bleu_labels = [[label] for label in decoded_labels]
-        bleu = bleu_metric(decoded_preds, bleu_labels, n_gram=3).item()
+        bleu = bleu_score(decoded_preds, bleu_labels, n_gram=3).item()
 
         # Edit distance ratio
         ratio_sum = 0.0

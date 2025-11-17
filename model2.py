@@ -107,6 +107,8 @@ def main(args):
 
     def compute_metrics(eval_pred):
         predictions, target_ans = eval_pred
+
+        target_ans = np.where(target_ans != -100, target_ans, tokenizer.pad_token_id)
         decoded_preds = tokenizer.batch_decode(predictions, skip_special_tokens=True)
         decoded_labels = tokenizer.batch_decode(target_ans, skip_special_tokens=True)
 

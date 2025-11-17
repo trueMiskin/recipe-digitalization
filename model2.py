@@ -88,8 +88,8 @@ def main(args):
         decoded_preds = tokenizer.batch_decode(predictions, skip_special_tokens=True)
         decoded_labels = tokenizer.batch_decode(target_ans, skip_special_tokens=True)
 
-        bleu_labels = [[label] for label in decoded_labels]
-        bleu = bleu_score(decoded_preds, bleu_labels, n_gram=3).item()
+        # bleu_labels = [[label] for label in decoded_labels]
+        # bleu = bleu_score(decoded_preds, bleu_labels, n_gram=3).item()
 
         # Edit distance ratio
         ratio_sum = 0.0
@@ -101,7 +101,8 @@ def main(args):
             levanstein_9 += (1.0 if r > 0.9 else 0.0)
             levanstein_8 += (1.0 if r > 0.8 else 0.0)
 
-        return {"bleu": bleu, "levenshtein_ratio": ratio_sum / len(decoded_preds),
+        return { #"bleu": bleu, 
+                "levenshtein_ratio": ratio_sum / len(decoded_preds),
                 "levenshtein_above_0.9": levanstein_9 / len(decoded_preds),
                 "levenshtein_above_0.8": levanstein_8 / len(decoded_preds)}
 

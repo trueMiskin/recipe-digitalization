@@ -5,8 +5,6 @@ import numpy as np
 import torch
 import convertor
 import argparse
-from paddleocr import PPStructure,draw_structure_result,save_structure_res
-from paddleocr import PaddleOCR, draw_ocr, PPStructure
 from PIL import Image
 import json
 
@@ -113,6 +111,9 @@ class OnlyImageRecipeDataset(torch.utils.data.Dataset):
 
 
 def ocr_with_paddle(img):
+    from paddleocr import PPStructure,draw_structure_result,save_structure_res
+    from paddleocr import PaddleOCR, draw_ocr, PPStructure
+
     finaltext = ''
     font_path = 'simfang.ttf' # PaddleOCR
 

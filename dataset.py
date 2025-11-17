@@ -53,11 +53,24 @@ class RecipeDataset(torch.utils.data.Dataset):
         # Output numpy array of a image: 0-255, HxWxC
         return img, title, ingredients, instructions
 
+
 P_OCR_TEXT = "texts"
 P_OCR_BOXES = "boxes"
 P_TITLE = "title"
 P_INGREDIENTS = "ingredients"
 P_INSTRUCTIONS = "instructions"
+QUESTIONS = ["What is a title: ", "List the ingredients: ", "Describe the instructions: "]
+
+def prepare_question(question_type, ocr_text, ocr_boxes, include_box_data=False):
+    question = QUESTIONS[question_type]
+    for text, box in zip(ocr_text, ocr_boxes):
+        left, upper, right, lower = box
+        if include_box_data:
+            question += f"[{left}{lower}] {text} "
+        else:
+            question += f"{text} "
+    return question
+
 
 class PreprocessedRecipeDataset(torch.utils.data.Dataset):
     def __init__(self, tokenizer, json_file="PreprocessedDataset.json", include_box_data=False):
@@ -67,16 +80,6 @@ class PreprocessedRecipeDataset(torch.utils.data.Dataset):
     
     def __len__(self):
         return len(self.data) * 3 # 3 questions per recipe
-    
-    def transform(self, question_type, ocr_text, ocr_boxes):
-        question = ["What is a title: ", "List the ingredients: ", "Describe the instructions: "][question_type]
-        for text, box in zip(ocr_text, ocr_boxes):
-            left, upper, right, lower = box
-            if self.include_box_data:
-                question += f"[{left}{lower}] {text} "
-            else:
-                question += f"{text} "
-        return question
 
     def __getitem__(self, idx):
         question_type = idx % 3
@@ -88,7 +91,7 @@ class PreprocessedRecipeDataset(torch.utils.data.Dataset):
         if question_type != P_TITLE:
             ans = '\n'.join(ans)
 
-        output_text = self.transform(question_type, ocr_text, ocr_boxes)
+        output_text = prepare_question(question_type, ocr_text, ocr_boxes, self.include_box_data)
 
         model_inputs = self.tokenizer(output_text)
         labels = self.tokenizer(text_target=ans)
@@ -105,13 +108,53 @@ class OnlyImageRecipeDataset(torch.utils.data.Dataset):
             self.image_names.append(file)
 
     def __len__(self):
-        return len(self.data)
+        return len(self.image_names)
     
     def __getitem__(self, idx):
         print(self.image_folder + "/" + self.image_names[idx])
         image = Image.open(self.image_folder + "/" + self.image_names[idx])
         # Output numpy array of a image: 0-255, HxWxC
         return np.asarray(image), "", [], []
+
+
+def extract_data_from_ocr_result(result):
+    boxes = [line[0] for line in result]
+    txts = [line[1][0] for line in result]
+
+    # use OCR regions
+    bboxes = []
+    for box in boxes:
+        left, upper = box[0][0], box[0][1]
+        right, lower = box[2][0], box[2][1]
+        bboxes.append([left, upper, right, lower])
+
+    return txts, bboxes
+
+
+def merge_close_boxes(ocr_text, ocr_boxes, threshold=10):
+    idx = 0
+    while idx < len(ocr_boxes):
+        txt = ocr_text[idx]
+        left, upper, right, lower = ocr_boxes[idx]
+
+        for i in range(idx):
+            l, u, r, b = ocr_boxes[i]
+            l -= threshold
+            u -= threshold
+            r += threshold
+            b += threshold
+            # Check if boxes overlap
+            if not (right < l or left > r or lower < u or upper > b):
+                # merge boxes
+                ocr_boxes[i] = [min(left, l), min(upper, u), max(right, r), max(lower, b)]
+                ocr_text[i] += ' ' + txt
+                ocr_boxes.pop(idx)
+                ocr_text.pop(idx)
+                break
+        else:
+            idx+=1
+
+    return ocr_text, ocr_boxes
 
 
 def ocr_with_paddle(img):

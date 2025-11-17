@@ -1,7 +1,7 @@
 
 from paddleocr import PaddleOCR, draw_ocr
 import convertor
-from dataset import RecipeDataset
+from dataset import RecipeDataset, extract_data_from_ocr_result
 import numpy as np
 import json
 
@@ -20,15 +20,7 @@ for title, ingredients, instructions in r:
         image = np.hstack(images)
         
         result = ocr.ocr(image, det=True, rec=True)[0]
-        boxes = [line[0] for line in result]
-        txts = [line[1][0] for line in result]
-
-        # use OCR regions
-        bboxes = []
-        for box in boxes:
-            left, upper = box[0][0], box[0][1]
-            right, lower = box[2][0], box[2][1]
-            bboxes.append([left, upper, right, lower])
+        txts, bboxes = extract_data_from_ocr_result(result)
 
         output.append({
             "boxes": bboxes,

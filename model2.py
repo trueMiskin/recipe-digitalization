@@ -6,12 +6,14 @@ from npfl138 import global_keras_initializers
 import torch
 import numpy as np
 import random
-from dataset import PreprocessedRecipeDataset, OnlyImageRecipeDataset
+from dataset import PreprocessedRecipeDataset, OnlyImageRecipeDataset, RecipeDataset
+from dataset import extract_data_from_ocr_result, merge_close_boxes, prepare_question, QUESTIONS
 from PIL import Image
 from transformers import T5Tokenizer, DataCollatorForSeq2Seq
 from transformers import T5ForConditionalGeneration, Seq2SeqTrainingArguments, Seq2SeqTrainer
 from torchmetrics.functional.text import bleu_score
 import Levenshtein
+from convertor import show_image
 
 parser = argparse.ArgumentParser(description='Recipe digitalization')
 parser.add_argument('--seed', type=int, default=1, help='Random seed')
@@ -21,39 +23,13 @@ parser.add_argument('--epochs', type=int, default=20, help='Number of epochs')
 parser.add_argument('--lr', type=float, default=3e-4, help='Learning rate')
 parser.add_argument('--show_prediction', default=False, action='store_true', help='Show predicted function')
 parser.add_argument('--model', default=None, help="Load model")
-parser.add_argument('--img_dir', default=None, help="Image directory")
 
-#     def predict(self, image):
-#         if self.ocr is None:
-#             from paddleocr import PaddleOCR
-#             self.ocr = PaddleOCR(lang='en',
-#                                 use_angle_cls=True
-#             )
-#         model_input = []
-#         bboxes = []
-#         res_part = []
-        
-#         result = self.ocr.ocr(image, det=True, rec=True)[0]
-#         boxes = [line[0] for line in result]
-#         txts = [line[1][0] for line in result]
-#         # use OCR regions
-#         model_input = txts
-#         bboxes = []
-#         res_part = []
-#         for box, txt in zip(boxes, txts):
-#             left, upper = box[0][0], box[0][1]
-#             right, lower = box[2][0], box[2][1]
-#             bboxes.append([left, upper, right, lower])
-#             res_part.append([{'text': txt, 'text_region': box, 'confidence': 0.99}])
+subparsers = parser.add_subparsers(dest='command')
+infer_img = subparsers.add_parser('infer', help='Inference images')
+infer_img.add_argument('model_path', help='Create prediction with trained model')
+infer_img.add_argument('--img_dir', default=None, help="Image directory")
+infer_img.add_argument('--infer_train', default=False, action='store_true', help="Inference validation set")
 
-#         tokenizer = AutoTokenizer.from_pretrained("google/electra-small-discriminator")
-#         tokenized_input = tokenizer(model_input, return_tensors='pt', padding=True, truncation=True)
-#         input_ids = tokenized_input['input_ids'].to(self.device)
-#         attention_mask = tokenized_input['attention_mask'].to(self.device)
-#         self.backbone.eval()
-#         with torch.no_grad():
-#             logits = self.backbone(input_ids, attention_mask=attention_mask).logits
-#             return model_input, bboxes, res_part, torch.argmax(torch.softmax(logits, dim=-1), dim=-1).cpu().numpy()
 
 def main(args):
     if args.seed is not None:
@@ -141,38 +117,47 @@ def main(args):
 
     trainer.train()
 
-    # if args.show_prediction:
-    #     assert(args.model != None)
-    #     model.load_weights(args.model)
-        
-    #     dataset = RecipeDataset(generate_images=True)
-    #     if args.img_dir is not None:
-    #         dataset = OnlyImageRecipeDataset(args.img_dir)
 
-    #     # create logdir if it doesn't exist
-    #     if not os.path.exists(args.logdir):
-    #         os.makedirs(args.logdir)
+def generate_prediction(args):
+    finetuned_model = T5ForConditionalGeneration.from_pretrained(args.model_path)
+    tokenizer = T5Tokenizer.from_pretrained(args.model_path)
 
-    #     for idx, data in enumerate(dataset):
-    #         img, *_ = data
-    #         model_input, bboxes, res_part, classes = model.predict(img)
+    dataset = None
+    if args.infer_train:
+        dataset = RecipeDataset(generate_images=True)
+    else:
+        dataset = OnlyImageRecipeDataset(args.img_dir)
 
-    #         from paddleocr import draw_structure_result
-    #         result_dict = []
-    #         for input, bbox, rest_p, class_ in zip(model_input, bboxes, res_part, classes):
-    #             print(input)
-    #             result_dict.append({
-    #                 'type': ['title', 'ingredients', 'description'][class_],
-    #                 'bbox': bbox,
-    #                 'res': rest_p,
-    #                 'img_idx': 0,
-    #                 'score': 0.99,
-    #             })
+    from paddleocr import PaddleOCR
+    ocr = PaddleOCR(lang='en',
+                    use_angle_cls=True
+    )
+    with open("prediction.txt", 'w') as f:
+        for idx in range(len(dataset)):
+            image, *_ = dataset[idx]
 
-    #         final_output = draw_structure_result(img, result_dict, font_path='simfang.ttf')
-    #         import convertor
-    #         convertor.show_image(final_output)
-    #         Image.fromarray(final_output).save(os.path.join(args.logdir, f"{idx:02d}.png"))
+            result = ocr.ocr(image, det=True, rec=True)[0]
+            ocr_text, ocr_boxes = extract_data_from_ocr_result(result)
+            ocr_text, ocr_boxes = merge_close_boxes(ocr_text, ocr_boxes, threshold=10)
+            print(f"--- {idx} ---", file=f)
+            for question_type in range(len(QUESTIONS)):
+                inputs = prepare_question(question_type, ocr_text, ocr_boxes)
+                print(inputs, file=f)
+
+                inputs = tokenizer(inputs, return_tensors="pt")
+                outputs = finetuned_model.generate(**inputs, min_length=50, max_length=4000)
+                answer = tokenizer.decode(outputs[0])
+                print(answer, file=f)
+                print("--------", file=f, flush=True)
+            show_image(image)
+
 
 if __name__ == '__main__':
-    main(parser.parse_args())
+    args = parser.parse_args()
+    args.command = "infer"
+    args.model_path = "checkpoint-30500"
+    args.infer_train = True
+    if args.command == "infer":
+        generate_prediction(args)
+    else:
+        main(args)

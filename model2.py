@@ -113,7 +113,8 @@ def main(args):
         decoded_labels = tokenizer.batch_decode(target_ans, skip_special_tokens=True)
 
         bleu_metric = BLEUScore()
-        bleu = bleu_metric(predictions, [target_ans]).item()
+        bleu_labels = [[label] for label in decoded_labels]
+        bleu = bleu_metric(decoded_preds, bleu_labels, n_gram=3).item()
 
         # Edit distance ratio
         ratio_sum = 0.0

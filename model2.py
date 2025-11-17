@@ -100,7 +100,7 @@ def main(args):
 
     train_dataset, test_dataset = \
         torch.utils.data.random_split(
-            PreprocessedRecipeDataset(tokenizer),
+            PreprocessedRecipeDataset(tokenizer, json_file="PreprocessedDataset_2.json"),
             [0.9, 0.1],
             torch.Generator().manual_seed(1)
     )

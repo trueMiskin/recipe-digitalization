@@ -60,8 +60,8 @@ P_INGREDIENTS = "ingredients"
 P_INSTRUCTIONS = "instructions"
 
 class PreprocessedRecipeDataset(torch.utils.data.Dataset):
-    def __init__(self, tokenizer, csv_file="PreprocessedDataset.json"):
-        self.data = json.load(open(csv_file, 'r'))
+    def __init__(self, tokenizer, json_file="PreprocessedDataset.json"):
+        self.data = json.load(open(json_file, 'r'))
         self.tokenizer = tokenizer
     
     def __len__(self):

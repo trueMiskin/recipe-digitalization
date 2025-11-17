@@ -60,9 +60,10 @@ P_INGREDIENTS = "ingredients"
 P_INSTRUCTIONS = "instructions"
 
 class PreprocessedRecipeDataset(torch.utils.data.Dataset):
-    def __init__(self, tokenizer, json_file="PreprocessedDataset.json"):
+    def __init__(self, tokenizer, json_file="PreprocessedDataset.json", include_box_data=False):
         self.data = json.load(open(json_file, 'r'))
         self.tokenizer = tokenizer
+        self.include_box_data = include_box_data
     
     def __len__(self):
         return len(self.data) * 3 # 3 questions per recipe
@@ -71,7 +72,10 @@ class PreprocessedRecipeDataset(torch.utils.data.Dataset):
         question = ["What is a title: ", "List the ingredients: ", "Describe the instructions: "][question_type]
         for text, box in zip(ocr_text, ocr_boxes):
             left, upper, right, lower = box
-            question += f"[{left}{lower}] {text} "
+            if self.include_box_data:
+                question += f"[{left}{lower}] {text} "
+            else:
+                question += f"{text} "
         return question
 
     def __getitem__(self, idx):

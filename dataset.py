@@ -62,20 +62,38 @@ P_INGREDIENTS = "ingredients"
 P_INSTRUCTIONS = "instructions"
 
 class PreprocessedRecipeDataset(torch.utils.data.Dataset):
-    def __init__(self, csv_file="PreprocessedDataset.json", transform=None):
+    def __init__(self, tokenizer, csv_file="PreprocessedDataset.json"):
         self.data = json.load(open(csv_file, 'r'))
+        self.tokenizer = tokenizer
     
     def __len__(self):
-        return len(self.data)
+        return len(self.data) * 3 # 3 questions per recipe
     
+    def transform(self, question_type, ocr_text, ocr_boxes):
+        question = ["What is a title: ", "List the ingredients: ", "Describe the instructions: "][question_type]
+        for text, box in zip(ocr_text, ocr_boxes):
+            left, upper, right, lower = box
+            question += f"[{left}{lower}] {text} "
+        return question
+
     def __getitem__(self, idx):
+        question_type = idx % 3
+        idx = idx // 3  # each recipe has 3 entries
         ocr_text = self.data[idx][P_OCR_TEXT]
         ocr_boxes = self.data[idx][P_OCR_BOXES]
-        title = self.data[idx][R_TITLE]
-        ingredients = self.data[idx][R_CLEANED_INGREDIENTS]
-        instructions = self.data[idx][R_INSTRUCTIONS]
+        ans = self.data[idx][ [P_TITLE, P_INGREDIENTS, P_INSTRUCTIONS][question_type] ]
         
-        return ocr_text, ocr_boxes, title, ingredients, instructions
+        if question_type != P_TITLE:
+            ans = '\n'.join(ans)
+
+        output_text = self.transform(question_type, ocr_text, ocr_boxes)
+
+        model_inputs = self.tokenizer(output_text)
+        labels = self.tokenizer(text_target=ans)
+
+        model_inputs["labels"] = labels["input_ids"]
+
+        return model_inputs
 
 class OnlyImageRecipeDataset(torch.utils.data.Dataset):
     def __init__(self, image_folder):

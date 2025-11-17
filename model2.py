@@ -31,6 +31,32 @@ infer_img.add_argument('--img_dir', default=None, help="Image directory")
 infer_img.add_argument('--infer_train', default=False, action='store_true', help="Inference validation set")
 
 
+def compute_metrics(eval_pred, tokenizer: T5Tokenizer):
+    predictions, target_ans = eval_pred
+
+    target_ans = np.where(target_ans != -100, target_ans, tokenizer.pad_token_id)
+    decoded_preds = tokenizer.batch_decode(predictions, skip_special_tokens=True)
+    decoded_labels = tokenizer.batch_decode(target_ans, skip_special_tokens=True)
+
+    # bleu_labels = [[label] for label in decoded_labels]
+    # bleu = bleu_score(decoded_preds, bleu_labels, n_gram=3).item()
+
+    # Edit distance ratio
+    ratio_sum = 0.0
+    levanstein_9 = 0.0
+    levanstein_8 = 0.0
+    for pred, label in zip(decoded_preds, decoded_labels):
+        r = Levenshtein.ratio(pred, label)
+        ratio_sum += r
+        levanstein_9 += (1.0 if r > 0.9 else 0.0)
+        levanstein_8 += (1.0 if r > 0.8 else 0.0)
+
+    return { #"bleu": bleu,
+            "levenshtein_ratio": ratio_sum / len(decoded_preds),
+            "levenshtein_above_0.9": levanstein_9 / len(decoded_preds),
+            "levenshtein_above_0.8": levanstein_8 / len(decoded_preds)}
+
+
 def main(args):
     if args.seed is not None:
         random.seed(args.seed)
@@ -81,31 +107,6 @@ def main(args):
             torch.Generator().manual_seed(1)
     )
 
-    def compute_metrics(eval_pred):
-        predictions, target_ans = eval_pred
-
-        target_ans = np.where(target_ans != -100, target_ans, tokenizer.pad_token_id)
-        decoded_preds = tokenizer.batch_decode(predictions, skip_special_tokens=True)
-        decoded_labels = tokenizer.batch_decode(target_ans, skip_special_tokens=True)
-
-        # bleu_labels = [[label] for label in decoded_labels]
-        # bleu = bleu_score(decoded_preds, bleu_labels, n_gram=3).item()
-
-        # Edit distance ratio
-        ratio_sum = 0.0
-        levanstein_9 = 0.0
-        levanstein_8 = 0.0
-        for pred, label in zip(decoded_preds, decoded_labels):
-            r = Levenshtein.ratio(pred, label)
-            ratio_sum += r
-            levanstein_9 += (1.0 if r > 0.9 else 0.0)
-            levanstein_8 += (1.0 if r > 0.8 else 0.0)
-
-        return { #"bleu": bleu, 
-                "levenshtein_ratio": ratio_sum / len(decoded_preds),
-                "levenshtein_above_0.9": levanstein_9 / len(decoded_preds),
-                "levenshtein_above_0.8": levanstein_8 / len(decoded_preds)}
-
     trainer = Seq2SeqTrainer(
         model=model,
         args=training_args,
@@ -113,7 +114,7 @@ def main(args):
         eval_dataset=test_dataset,
         tokenizer=tokenizer,
         data_collator=data_collator,
-        compute_metrics=compute_metrics
+        compute_metrics=lambda eval_pred: compute_metrics(eval_pred, tokenizer)
     )
 
     trainer.train()
@@ -135,7 +136,10 @@ def generate_prediction(args):
     )
     with open("prediction.txt", 'w') as f:
         for idx in range(len(dataset)):
-            image, *_ = dataset[idx]
+            image, *targets = dataset[idx]
+            for idx in range(len(targets)):
+                if isinstance(targets[idx], list):
+                    targets[idx] = "|".join(targets[idx])
 
             result = ocr.ocr(image, det=True, rec=True)[0]
             ocr_text, ocr_boxes = extract_data_from_ocr_result(result)
@@ -146,7 +150,10 @@ def generate_prediction(args):
                 print(inputs, file=f)
 
                 inputs = tokenizer(inputs, return_tensors="pt")
-                outputs = finetuned_model.generate(**inputs, min_length=50, max_length=4000)
+                outputs = finetuned_model.generate(**inputs, min_length=1, max_length=4000)
+                print(compute_metrics((outputs, tokenizer(targets[question_type], return_tensors="pt")['input_ids']),
+                                      tokenizer
+                                      ), file=f)
                 answer = tokenizer.decode(outputs[0])
                 print(answer, file=f)
                 print("--------", file=f, flush=True)

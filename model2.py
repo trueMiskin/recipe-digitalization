@@ -31,8 +31,11 @@ infer_img.add_argument('--img_dir', default=None, help="Image directory")
 infer_img.add_argument('--infer_train', default=False, action='store_true', help="Inference validation set")
 
 
-def compute_metrics(eval_pred, tokenizer: T5Tokenizer):
+def compute_metrics(eval_pred, tokenizer: T5Tokenizer, limit_target_length=False):
     predictions, target_ans = eval_pred
+
+    if limit_target_length:
+        target_ans = target_ans[:, :predictions.shape[1]]
 
     target_ans = np.where(target_ans != -100, target_ans, tokenizer.pad_token_id)
     decoded_preds = tokenizer.batch_decode(predictions, skip_special_tokens=True)
@@ -75,7 +78,7 @@ def main(args):
 
     tokenizer = T5Tokenizer.from_pretrained(MODEL_NAME)
     model = T5ForConditionalGeneration.from_pretrained(MODEL_NAME)
-    model.generation_config.max_length = 4000
+    model.generation_config.max_length = 40
 
     data_collator = DataCollatorForSeq2Seq(tokenizer=tokenizer, model=model)
     
@@ -92,7 +95,7 @@ def main(args):
     training_args = Seq2SeqTrainingArguments(
         output_dir=args.logdir,
         eval_strategy="epoch",
-        eval_delay=5,
+        # eval_delay=5,
         learning_rate=args.lr,
         per_device_train_batch_size=args.batch_size,
         per_device_eval_batch_size=args.batch_size,
@@ -117,7 +120,7 @@ def main(args):
         eval_dataset=test_dataset,
         tokenizer=tokenizer,
         data_collator=data_collator,
-        compute_metrics=lambda eval_pred: compute_metrics(eval_pred, tokenizer)
+        compute_metrics=lambda eval_pred: compute_metrics(eval_pred, tokenizer, limit_target_length=True)
     )
 
     trainer.train()

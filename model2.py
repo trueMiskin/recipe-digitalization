@@ -75,6 +75,8 @@ def main(args):
 
     tokenizer = T5Tokenizer.from_pretrained(MODEL_NAME)
     model = T5ForConditionalGeneration.from_pretrained(MODEL_NAME)
+    model.generation_config.max_length = 4000
+
     data_collator = DataCollatorForSeq2Seq(tokenizer=tokenizer, model=model)
     
     args.logdir = os.path.join("logs", "{}-{}-{}".format(
@@ -122,6 +124,8 @@ def main(args):
 
 def generate_prediction(args):
     finetuned_model = T5ForConditionalGeneration.from_pretrained(args.model_path)
+    finetuned_model.generation_config.max_length = 4000
+
     tokenizer = T5Tokenizer.from_pretrained(args.model_path)
 
     dataset = None
@@ -150,7 +154,7 @@ def generate_prediction(args):
                 print(inputs, file=f)
 
                 inputs = tokenizer(inputs, return_tensors="pt")
-                outputs = finetuned_model.generate(**inputs, min_length=1, max_length=4000)
+                outputs = finetuned_model.generate(**inputs)
                 print(compute_metrics((outputs, tokenizer(targets[question_type], return_tensors="pt")['input_ids']),
                                       tokenizer
                                       ), file=f)

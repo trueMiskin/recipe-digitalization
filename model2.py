@@ -91,7 +91,8 @@ def main(args):
     # Set up training arguments
     training_args = Seq2SeqTrainingArguments(
         output_dir=args.logdir,
-        evaluation_strategy="epoch",
+        eval_strategy="epoch",
+        eval_delay=5,
         learning_rate=args.lr,
         per_device_train_batch_size=args.batch_size,
         per_device_eval_batch_size=args.batch_size,

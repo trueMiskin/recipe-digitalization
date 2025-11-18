@@ -166,9 +166,6 @@ def generate_prediction(args):
 
 if __name__ == '__main__':
     args = parser.parse_args()
-    args.command = "infer"
-    args.model_path = "checkpoint-30500"
-    args.infer_train = True
     if args.command == "infer":
         generate_prediction(args)
     else:

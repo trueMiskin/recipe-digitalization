@@ -59,7 +59,8 @@ P_OCR_BOXES = "boxes"
 P_TITLE = "title"
 P_INGREDIENTS = "ingredients"
 P_INSTRUCTIONS = "instructions"
-QUESTIONS = ["What is a title: ", "List the ingredients: ", "Describe the instructions: "]
+# QUESTIONS = ["What is a title: ", "List the ingredients: ", "Describe the instructions: "]
+QUESTIONS = ["Name of the recipe: ", "List the ingredients: ", "Describe the instructions: "]
 
 def prepare_question(question_type, ocr_text, ocr_boxes, include_box_data=False):
     question = QUESTIONS[question_type]

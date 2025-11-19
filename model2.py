@@ -7,7 +7,7 @@ import torch
 import numpy as np
 import random
 from dataset import PreprocessedRecipeDataset, OnlyImageRecipeDataset, RecipeDataset
-from dataset import extract_data_from_ocr_result, merge_close_boxes, prepare_question, QUESTIONS
+from dataset import extract_data_from_ocr_result, merge_close_boxes, prepare_question, QUESTIONS_V2
 from PIL import Image
 from transformers import T5Tokenizer, DataCollatorForSeq2Seq
 from transformers import T5ForConditionalGeneration, Seq2SeqTrainingArguments, Seq2SeqTrainer
@@ -29,7 +29,8 @@ infer_img = subparsers.add_parser('infer', help='Inference images')
 infer_img.add_argument('model_path', help='Create prediction with trained model')
 infer_img.add_argument('--img_dir', default=None, help="Image directory")
 infer_img.add_argument('--infer_train', default=False, action='store_true', help="Inference validation set")
-
+infer_img.add_argument('-q', '--question_version', type=int, default=2, help="Question version to use")
+infer_img.add_argument('--pos_info', default=False, action='store_true', help="Add to question positional info")
 
 def compute_metrics(eval_pred, tokenizer: T5Tokenizer, limit_target_length=False):
     predictions, target_ans = eval_pred
@@ -145,16 +146,16 @@ def generate_prediction(args):
     with open("prediction.txt", 'w') as f:
         for idx in range(len(dataset)):
             image, *targets = dataset[idx]
-            for idx in range(len(targets)):
-                if isinstance(targets[idx], list):
-                    targets[idx] = "|".join(targets[idx])
+            for i in range(len(targets)):
+                if isinstance(targets[i], list):
+                    targets[i] = "|".join(targets[i])
 
             result = ocr.ocr(image, det=True, rec=True)[0]
             ocr_text, ocr_boxes = extract_data_from_ocr_result(result)
             ocr_text, ocr_boxes = merge_close_boxes(ocr_text, ocr_boxes, threshold=10)
             print(f"--- {idx} ---", file=f)
-            for question_type in range(len(QUESTIONS)):
-                inputs = prepare_question(question_type, ocr_text, ocr_boxes)
+            for question_type in range(len(QUESTIONS_V2)):
+                inputs = prepare_question(question_type, ocr_text, ocr_boxes, args.pos_info, args.question_version)
                 print(inputs, file=f)
 
                 inputs = tokenizer(inputs, return_tensors="pt")

@@ -35,10 +35,10 @@ def basic_template(recipe_name, ingredients: list[str], instructions: list[str],
 # {recipe_name}
 
 ## Ingredients
-{_ingredients_basic(ingredients)}
+{_ingredients_basic(ingredients).replace('\\s', '')}
 
 ## Instructions
-{_instructions_basic(instructions)}
+{_instructions_basic(instructions).replace('\\s', '')}
 """
 
 
@@ -50,9 +50,9 @@ def two_column_template(recipe_name, ingredients: list[str], instructions: list[
 # {recipe_name}
 \\Begin{{multicols}}{{2}}
 ## Ingredients
-{_ingredients_basic(ingredients)}
+{_ingredients_basic(ingredients).replace('\\s', '')}
 ## Instructions
-{_instructions_basic(instructions)}
+{_instructions_basic(instructions).replace('\\s', '')}
 \\End{{multicols}}
 """
 

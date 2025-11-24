@@ -6,7 +6,7 @@ from npfl138 import global_keras_initializers
 import torch
 import numpy as np
 import random
-from dataset import PreprocessedRecipeDataset, OnlyImageRecipeDataset, RecipeDataset
+from dataset import PreprocessedRecipeDataset, OnlyImageRecipeDataset, RecipeDataset, AnnotatedPictures
 from dataset import extract_data_from_ocr_result, merge_close_boxes, prepare_question, QUESTIONS_V2
 from PIL import Image
 from transformers import T5Tokenizer, DataCollatorForSeq2Seq
@@ -28,9 +28,12 @@ subparsers = parser.add_subparsers(dest='command')
 infer_img = subparsers.add_parser('infer', help='Inference images')
 infer_img.add_argument('model_path', help='Create prediction with trained model')
 infer_img.add_argument('--img_dir', default=None, help="Image directory")
+infer_img.add_argument('--annotated_dir', default=None, help="Annotated data directory")
 infer_img.add_argument('--infer_train', default=False, action='store_true', help="Inference validation set")
 infer_img.add_argument('-q', '--question_version', type=int, default=2, help="Question version to use")
 infer_img.add_argument('--pos_info', default=False, action='store_true', help="Add to question positional info")
+infer_img.add_argument('--show_image', default=False, action='store_true', help="Show image during inference")
+infer_img.add_argument('--prediction_file', default="prediction.txt", help="File to save predictions")
 
 def compute_metrics(eval_pred, tokenizer: T5Tokenizer, limit_target_length=False):
     predictions, target_ans = eval_pred
@@ -136,6 +139,8 @@ def generate_prediction(args):
     dataset = None
     if args.infer_train:
         dataset = RecipeDataset(generate_images=True)
+    elif args.annotated_dir is not None:
+        dataset = AnnotatedPictures(args.annotated_dir)
     else:
         dataset = OnlyImageRecipeDataset(args.img_dir)
 
@@ -143,7 +148,8 @@ def generate_prediction(args):
     ocr = PaddleOCR(lang='en',
                     use_angle_cls=True
     )
-    with open("prediction.txt", 'w') as f:
+    with open(args.prediction_file, 'w') as f:
+        metrics_sum = {}
         for idx in range(len(dataset)):
             image, *targets = dataset[idx]
             for i in range(len(targets)):
@@ -160,14 +166,24 @@ def generate_prediction(args):
 
                 inputs = tokenizer(inputs, return_tensors="pt")
                 outputs = finetuned_model.generate(**inputs)
-                print(compute_metrics((outputs, tokenizer(targets[question_type], return_tensors="pt")['input_ids']),
-                                      tokenizer
-                                      ), file=f)
+                metrics = compute_metrics((outputs, tokenizer(targets[question_type], return_tensors="pt")['input_ids']),
+                                      tokenizer)
+                print(metrics, file=f)
+                for k, v in metrics.items():
+                    if k not in metrics_sum:
+                        metrics_sum[k] = 0.0
+                    metrics_sum[k] += v
+
                 answer = tokenizer.decode(outputs[0])
                 print(answer, file=f)
                 print("--------", file=f, flush=True)
-            show_image(image)
-
+            
+            if args.show_image:
+                show_image(image)
+            
+        for k, v in metrics_sum.items():
+            metrics_sum[k] /= len(dataset) * len(QUESTIONS_V2)
+        print("Average metrics:", metrics_sum, file=f)
 
 if __name__ == '__main__':
     args = parser.parse_args()

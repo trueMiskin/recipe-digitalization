@@ -120,6 +120,24 @@ class OnlyImageRecipeDataset(torch.utils.data.Dataset):
         return np.asarray(image), "", [], []
 
 
+class AnnotatedPictures(torch.utils.data.Dataset):
+    def __init__(self, image_folder):
+        self.image_folder = image_folder
+        self.data = json.load(open(f"{image_folder}/targets.json", 'r'))
+
+    def __len__(self):
+        return len(self.data)
+    
+    def __getitem__(self, idx):
+        print(self.image_folder + "/" + self.data[idx]["img"])
+        image = Image.open(self.image_folder + "/" + self.data[idx]["img"])
+        # Output numpy array of a image: 0-255, HxWxC
+        title = self.data[idx]["title"]
+        ingredients = self.data[idx]["ingredients"]
+        instructions = self.data[idx]["instructions"]
+        return np.asarray(image), title, ingredients, instructions
+
+
 def extract_data_from_ocr_result(result):
     boxes = [line[0] for line in result]
     txts = [line[1][0] for line in result]

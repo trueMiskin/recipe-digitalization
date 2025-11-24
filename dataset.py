@@ -75,10 +75,11 @@ def prepare_question(question_type, ocr_text, ocr_boxes, include_box_data=False,
 
 
 class PreprocessedRecipeDataset(torch.utils.data.Dataset):
-    def __init__(self, tokenizer, json_file="PreprocessedDataset.json", include_box_data=False):
+    def __init__(self, tokenizer, json_file="PreprocessedDataset.json", include_box_data=False, return_tensors=False):
         self.data = json.load(open(json_file, 'r'))
         self.tokenizer = tokenizer
         self.include_box_data = include_box_data
+        self.return_tensors = return_tensors
     
     def __len__(self):
         return len(self.data) * 3 # 3 questions per recipe
@@ -96,8 +97,12 @@ class PreprocessedRecipeDataset(torch.utils.data.Dataset):
 
         output_text = prepare_question(question_type, ocr_text, ocr_boxes, self.include_box_data)
 
-        model_inputs = self.tokenizer(output_text)
-        labels = self.tokenizer(text_target=ans)
+        additional_kwargs = {}
+        if self.return_tensors:
+            additional_kwargs['return_tensors'] = 'pt'
+
+        model_inputs = self.tokenizer(output_text, **additional_kwargs)
+        labels = self.tokenizer(text_target=ans, **additional_kwargs)
 
         model_inputs["labels"] = labels["input_ids"]
 

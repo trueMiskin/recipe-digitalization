@@ -29,7 +29,8 @@ infer_img = subparsers.add_parser('infer', help='Inference images')
 infer_img.add_argument('model_path', help='Create prediction with trained model')
 infer_img.add_argument('--img_dir', default=None, help="Image directory")
 infer_img.add_argument('--annotated_dir', default=None, help="Annotated data directory")
-infer_img.add_argument('--infer_train', default=False, action='store_true', help="Inference validation set")
+infer_img.add_argument('--infer_train', default=False, action='store_true', help="Inference whole dataset")
+infer_img.add_argument('--infer_dev_preprocessed', default=False, action='store_true', help="Inference validation set from preprocessed data")
 infer_img.add_argument('-q', '--question_version', type=int, default=2, help="Question version to use")
 infer_img.add_argument('--pos_info', default=False, action='store_true', help="Add to question positional info")
 infer_img.add_argument('--show_image', default=False, action='store_true', help="Show image during inference")
@@ -130,6 +131,37 @@ def main(args):
     trainer.train()
 
 
+def generate_prediction_preprocessed(args, finetuned_model, tokenizer):
+    _, dataset = \
+        torch.utils.data.random_split(
+            PreprocessedRecipeDataset(tokenizer, json_file="PreprocessedDataset_2.json", return_tensors=True),
+            [0.9, 0.1],
+            torch.Generator().manual_seed(1)
+    )
+    with open(args.prediction_file, 'w') as f:
+        metrics_sum = {}
+        for idx in range(len(dataset)):
+            inputs = dataset[idx]
+
+            print(tokenizer.batch_decode(inputs['input_ids'], skip_special_tokens=True)[0], file=f)
+            outputs = finetuned_model.generate(input_ids=inputs['input_ids'], attention_mask=inputs['attention_mask'])
+            metrics = compute_metrics((outputs, inputs['labels']), tokenizer)
+
+            print(metrics, file=f)
+            for k, v in metrics.items():
+                if k not in metrics_sum:
+                    metrics_sum[k] = 0.0
+                metrics_sum[k] += v
+
+            answer = tokenizer.decode(outputs[0])
+            print(answer, file=f)
+            print("--------", file=f)
+
+        for k, v in metrics_sum.items():
+            metrics_sum[k] /= len(dataset)
+        print("Average metrics:", metrics_sum, file=f)
+
+
 def generate_prediction(args):
     finetuned_model = T5ForConditionalGeneration.from_pretrained(args.model_path)
     finetuned_model.generation_config.max_length = 4000
@@ -137,6 +169,8 @@ def generate_prediction(args):
     tokenizer = T5Tokenizer.from_pretrained(args.model_path)
 
     dataset = None
+    if args.infer_dev_preprocessed:
+        return generate_prediction_preprocessed(args, finetuned_model, tokenizer)
     if args.infer_train:
         dataset = RecipeDataset(generate_images=True)
     elif args.annotated_dir is not None:

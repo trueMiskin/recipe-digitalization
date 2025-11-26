@@ -75,11 +75,13 @@ def prepare_question(question_type, ocr_text, ocr_boxes, include_box_data=False,
 
 
 class PreprocessedRecipeDataset(torch.utils.data.Dataset):
-    def __init__(self, tokenizer, json_file="PreprocessedDataset.json", include_box_data=False, return_tensors=False):
+    def __init__(self, tokenizer, json_file="PreprocessedDataset.json", include_box_data=False, return_tensors=False,
+                 question_version=2):
         self.data = json.load(open(json_file, 'r'))
         self.tokenizer = tokenizer
         self.include_box_data = include_box_data
         self.return_tensors = return_tensors
+        self.question_version = question_version
     
     def __len__(self):
         return len(self.data) * 3 # 3 questions per recipe
@@ -92,10 +94,13 @@ class PreprocessedRecipeDataset(torch.utils.data.Dataset):
         ans = self.data[idx][ [P_TITLE, P_INGREDIENTS, P_INSTRUCTIONS][question_type] ]
         
         if question_type != P_TITLE:
-            # separator multiple answers
-            ans = '|'.join(ans)
+            # separator multiple
+            if self.question_version == 1:
+                ans = '\n'.join(ans)
+            else:
+                ans = '|'.join(ans)
 
-        output_text = prepare_question(question_type, ocr_text, ocr_boxes, self.include_box_data)
+        output_text = prepare_question(question_type, ocr_text, ocr_boxes, self.include_box_data, self.question_version)
 
         additional_kwargs = {}
         if self.return_tensors:

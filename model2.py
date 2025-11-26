@@ -134,7 +134,9 @@ def main(args):
 def generate_prediction_preprocessed(args, finetuned_model, tokenizer):
     _, dataset = \
         torch.utils.data.random_split(
-            PreprocessedRecipeDataset(tokenizer, json_file="PreprocessedDataset_2.json", return_tensors=True),
+            PreprocessedRecipeDataset(tokenizer, json_file="PreprocessedDataset_2.json", return_tensors=True,
+                                      include_box_data=args.pos_info,
+                                      question_version=args.question_version),
             [0.9, 0.1],
             torch.Generator().manual_seed(1)
     )

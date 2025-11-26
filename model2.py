@@ -160,6 +160,7 @@ def generate_prediction_preprocessed(args, finetuned_model, tokenizer):
         for k, v in metrics_sum.items():
             metrics_sum[k] /= len(dataset)
         print("Average metrics:", metrics_sum, file=f)
+        print("Average metrics:", metrics_sum)
 
 
 def generate_prediction(args):

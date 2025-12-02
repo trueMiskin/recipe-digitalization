@@ -4,14 +4,19 @@ import convertor
 from dataset import RecipeDataset, extract_data_from_ocr_result
 import numpy as np
 import json
+import os
 
 r = RecipeDataset(generate_images=False)
 ocr = PaddleOCR(lang='en',
                     use_angle_cls=True
 )
 
-output = []
-idx = 0
+if os.path.exists(f"PreprocessedDataset-checkpoint.json"):
+    output = json.load(open(f"PreprocessedDataset-checkpoint.json", "r"))
+else:
+    output = []
+idx = len(output) // 2
+
 for title, ingredients, instructions in r:
     print(f"Processing recipe: {idx}")
     for template in convertor.TEMPLATES:

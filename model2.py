@@ -22,7 +22,6 @@ parser.add_argument('--batch_size', type=int, default=4, help='Batch size')
 parser.add_argument('--epochs', type=int, default=20, help='Number of epochs')
 parser.add_argument('--lr', type=float, default=3e-4, help='Learning rate')
 parser.add_argument('--show_prediction', default=False, action='store_true', help='Show predicted function')
-parser.add_argument('--model', default=None, help="Load model")
 
 subparsers = parser.add_subparsers(dest='command')
 infer_img = subparsers.add_parser('infer', help='Inference images')
